@@ -2,7 +2,7 @@
 
 ## Contributors:
 
-William XQ Ngiam, Nicole Nelson
+William XQ Ngiam, Nicole L Nelson
 
 ## Project
 

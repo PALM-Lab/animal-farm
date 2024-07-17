@@ -16,20 +16,27 @@ var jsPsych = initJsPsych({show_progress_bar: true});
 
 // DEFINE EXPERIMENT VARIABLES
 let animals = [
+  "stim/doggo_0.png",
   "stim/doggo_1.png",
   "stim/doggo_2.png",
   "stim/doggo_3.png",
   "stim/doggo_4.png",
   "stim/doggo_5.png",
   "stim/doggo_6.png",
-  "stim/doggo_7.png",
-  "stim/doggo_8.png"
+  "stim/doggo_7.png"
 ]
+
+/* set-up some trial variables */
+var trial_animals = [] // will hold the animals in each trial
+var test_location = [] // which item is tested
 
 let background = ["background.png"]
 let n_animals = 8 // how many animals
 let n_pairs = n_animals/2 // how many pairs
 let n_trials = 20 // number of trials
+
+let stim_time = 1000 // stim presentation in msec
+let retention_time = 250 // blank interval after stimulus in msec
 
 let canvas_width = 920 // sets canvas width
 let canvas_height = 500 // sets canvas height
@@ -60,6 +67,29 @@ var pavlovia_init = {
 }
 //timeline.push(pavlovia_init);
 
+/* get subject ID */
+var get_ID = {
+  type: jsPsychSurveyText,
+  preamble: '<h3>For the experimenter:</h3',
+  questions: [
+    {prompt: 'Participant ID:', name: 'subject_id', required: true},
+    {prompt: 'Participant Name:', required: true}
+  ],
+  on_finish: function() {
+    var this_id = jsPsych.data.get().last(1).values()[0].response.subject_id; // save a subject ID, and add to all trials
+    jsPsych.data.addProperties({subject: this_id});
+  }
+}
+
+timeline.push(get_ID)
+
+/* force fullscreen */
+var enter_fullscreen = {
+  type: jsPsychFullscreen,
+  fullscreen_mode: true
+}
+timeline.push(enter_fullscreen);
+
 /* preload images */
 var preload = {
     type: jsPsychPreload,
@@ -87,7 +117,7 @@ var instructions = {
     <p>Press the button below when you are ready.</p>
   `,
   choices: ["OK"],
-  post_trial_gap: 1000
+  post_trial_gap: stim_time
 };
 timeline.push(instructions);
 
@@ -97,65 +127,47 @@ var fixation = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: '<div style="font-size:60px;">+</div>',
   choices: "NO_KEYS",
-  trial_duration: 1000,
+  trial_duration: retention_time,
   data: {
     task: 'fixation'
   }
 };
 
 /* show stimulus */
-var stimulus = {
+var stim = {
   type: jsPsychCanvasButtonResponse,
   stimulus: draw_stimulus,
   choices: ['x'],
   button_html: '<button class="jspsych-btn" style = "position:absolute; left:0px; top: 0px">%choice%</button>',
-  trial_duration: 2500,
+  trial_duration: stim_time,
   canvas_size: [canvas_height, canvas_width], // height x width
   on_finish: function(data){
     if(jsPsych.pluginAPI.compareKeys(data.response, null)){
+      data.animals = trial_animals
     } else (
       jsPsych.endCurrentTimeline()
     )
   },
+  post_trial_gap: retention_time,
   data: {
-    task: 'stimulus'
+    task: 'stim' // easy to filter out later
   }
 }
 
 function draw_stimulus(c) {
-  let ctx = c.getContext("2d");
-  var rand_images = jsPsych.randomization.sampleWithoutReplacement(animal_pairs,2);
+  var ctx = c.getContext("2d");
+  trial_animals = jsPsych.randomization.sampleWithoutReplacement(animal_pairs,2);
 
   for (var i = 0; i < 2; i++) {
     var img = new Image();
-    img.src = rand_images[i][0];
+    img.src = trial_animals[i][0];
     ctx.drawImage(img, x = item_locs[2*i][0], y = item_locs[2*i][1] - canvas_offset_diff, width = item_size, height = item_size)
 
     var img = new Image();
-    img.src = rand_images[i][1];
+    img.src = trial_animals[i][1];
     ctx.drawImage(img, x = item_locs[2*i+1][0], y = item_locs[2*i+1][1] - canvas_offset_diff, width = item_size, height = item_size)
   }
 }
-
-var blank = {
-  type: jsPsychHtmlKeyboardResponse,
-  stimulus: '',
-  choices: "NO_KEYS",
-  trial_duration: 0,
-  data: {
-    task: 'retention'
-  }
-};
-
-/* show test */
-function draw_test_rect(c) {
-	let ctx = c.getContext("2d");
-
-  for (var i = 0; i < 2; i++) {
-    ctx.strokeRect(x = item_locs[2*i][0], y = item_locs[2*i][1], item_size, item_size);
-    ctx.strokeRect(x = item_locs[2*i+1][0], y = item_locs[2*i+1][1], item_size, item_size);
-  }
-	}
 
 var trial = {
   type: jsPsychCanvasButtonResponse,
@@ -164,14 +176,38 @@ var trial = {
   button_html: '<img src=%choice% width="100" height="100"></img>',
   choices: animals,
   canvas_size: [canvas_height, canvas_width],
+  on_start: function(data) {
+    var trial_animals = []
+    trial_animals = jsPsych.data.getLastTrialData().values()[0].animals
+    data.trial_animals = trial_animals
+  },
+  on_finish: function(data){
+    data.test_position = Number(test_location)
+    data.correct_animal = Number(trial_animals[Math.floor(test_location/2)][test_location%2].replace(/^\D+|\D+$/g, ''))
+    data.correct = data.response == data.correct_animal
+  },
   data: {
-    task: 'response'
-    }
+    task: 'respond'
+  }
 };
+
+/* show test */
+function draw_test_rect(c) {
+	var ctx = c.getContext("2d");
+  test_location = jsPsych.randomization.sampleWithoutReplacement([0,1,2,3],1);
+
+  for (var i = 0; i < 2; i++) {
+    ctx.strokeRect(x = item_locs[2*i][0], y = item_locs[2*i][1], item_size, item_size);
+    ctx.strokeRect(x = item_locs[2*i+1][0], y = item_locs[2*i+1][1], item_size, item_size);
+  }
+  ctx.lineWidth = 5; // thick test location
+  ctx.strokeRect(x = item_locs[test_location][0], y = item_locs[test_location][1], item_size, item_size);
+}
+
 
 /* define test procedure */
 var test_procedure = {
-  timeline: [fixation, stimulus, blank, trial],
+  timeline: [fixation, stim, trial],
   repetitions: n_trials,
   randomize_order: true
 };
@@ -179,7 +215,7 @@ timeline.push(test_procedure);
 
 /* define awareness test */
 var awareness_test = {
-  timeline: [fixation, stimulus, blank, trial],
+  timeline: [fixation, stim, trial],
   repetitions: 1
 }
 timeline.push(awareness_test)
